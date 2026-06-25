@@ -1,0 +1,85 @@
+services:
+
+  # ─────────────────────────────────────────────
+  # AdGuard Home — DNS local + ad blocking
+  # Admin UI : http://<host>:3000
+  # DNS      : port 53 UDP/TCP
+  #
+  # Prérequis : désactiver systemd-resolved sur l'hôte avant de démarrer
+  #   sudo systemctl stop systemd-resolved
+  #   sudo systemctl disable systemd-resolved
+  # ─────────────────────────────────────────────
+  adguard:
+    image: adguard/adguardhome:latest
+    container_name: adguard
+    restart: unless-stopped
+    networks:
+      - proxlio
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "${ADGUARD_PORT:-3000}:3000/tcp"
+    volumes:
+      - adguard_conf:/opt/adguardhome/conf
+      - adguard_work:/opt/adguardhome/work
+
+  # ─────────────────────────────────────────────
+  # Nginx Proxy Manager — reverse proxy + SSL auto (Let's Encrypt)
+  # Admin UI : http://<host>:81
+  #   - Email par défaut   : admin@example.com
+  #   - Password par défaut: changeme  (à changer à la première connexion)
+  # HTTP     : port 80
+  # HTTPS    : port 443
+  # ─────────────────────────────────────────────
+  npm:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: npm
+    restart: unless-stopped
+    networks:
+      - proxlio
+    ports:
+      - "80:80"
+      - "443:443"
+      - "81:81"
+    volumes:
+      - npm_data:/data
+      - npm_letsencrypt:/etc/letsencrypt
+    depends_on:
+      - adguard
+
+  # ─────────────────────────────────────────────
+  # Cloudflare Tunnel — accès externe sans ouvrir de port
+  # Aucun port exposé : le tunnel est initié en sortant vers Cloudflare.
+  # Token requis : créer un tunnel dans le dashboard Cloudflare Zero Trust
+  #   https://one.dash.cloudflare.com → Networks → Tunnels
+  #
+  # Ce service n'est démarré qu'avec le profil "tunnel" :
+  #   docker compose --profile tunnel up -d
+  # ─────────────────────────────────────────────
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    profiles: ["tunnel"]
+    networks:
+      - proxlio
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - npm
+
+networks:
+  proxlio:
+    name: proxlio
+    driver: bridge
+
+volumes:
+  npm_data:
+    name: proxlio_npm_data
+  npm_letsencrypt:
+    name: proxlio_npm_letsencrypt
+  adguard_conf:
+    name: proxlio_adguard_conf
+  adguard_work:
+    name: proxlio_adguard_work
