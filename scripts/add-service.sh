@@ -309,7 +309,8 @@ echo ""
 echo "  Cloudflare Zero Trust → Networks → Tunnels → ${CF_TUNNEL_NAME:-your-tunnel} → Edit → Public Hostnames → Add"
 echo "    Subdomain : $SUBDOMAIN"
 echo "    Domain    : $DOMAIN"
-echo "    Service   : http://localhost"
+echo "    Service   : http://npm"
+echo "    (cloudflared and npm share the 'proxlio' Docker network — use the service name, not localhost)"
 echo ""
 
 if [[ "$SSL_ENABLED" == "false" ]]; then

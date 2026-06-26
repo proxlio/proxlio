@@ -24,7 +24,7 @@ Internet ──► [ Cloudflare Tunnel ] ──► [ Nginx Proxy Manager ] ─�
 ✅ Automatic SSL — Let's Encrypt certificates issued by NPM, no certbot setup  
 ✅ Split DNS — local traffic resolves to your server's LAN IP, stays off the internet  
 ✅ External access without port forwarding — Cloudflare Tunnel is outbound-only  
-✅ Works even without a public IP — including CGNAT and ISP-shared addresses  
+✅ Works even without a public IP — including CGNAT (when your ISP shares one IP across many customers) and DS-Lite  
 ✅ Add a service in under 2 minutes — 3 prompts, one script  
 ✅ No lock-in — plain Docker Compose, swap or extend components freely  
 
@@ -164,6 +164,7 @@ Docker is installed automatically if not already present.
 - **Manual tunnel hostname step** — after running `add-service.sh`, you still need to add the public hostname in the Cloudflare dashboard. This is on the roadmap.
 - **Port 53 conflict** — if `systemd-resolved` is running (default on Ubuntu), the installer will warn you and provide the commands to free the port. AdGuard needs exclusive access to port 53.
 - **No HTTPS between NPM and backend** — NPM forwards to backend services over HTTP by default. You can change this per-host in NPM's UI if your service requires it.
+- **Static IP or DHCP reservation recommended** — Proxlio captures your server's LAN IP at install time and stores it in `.env`. If your server's IP changes (DHCP lease renewal, interface switch), DNS rewrites will point to the old address until you update `HOST_IP` in `.env` and re-run `add-service.sh` for each service. A static IP or a router DHCP reservation avoids this.
 - **No clustering or high availability** — this is a single-node setup. If your server goes down, services go down.
 
 ## Uninstall

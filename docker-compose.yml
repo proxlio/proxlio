@@ -58,7 +58,8 @@ services:
   # ─────────────────────────────────────────────
   # Cloudflare Tunnel — external access without port forwarding
   # No ports exposed: the tunnel is initiated outbound to Cloudflare.
-  # Token passed via TUNNEL_TOKEN env var — not visible in docker inspect command.
+  # Token passed via TUNNEL_TOKEN env var.
+  # Note: env vars are visible in 'docker inspect' — use Docker Secrets for production hardening.
   # Token: create a tunnel at https://one.dash.cloudflare.com → Networks → Tunnels
   # Start with: docker compose --profile tunnel up -d
   # ─────────────────────────────────────────────
