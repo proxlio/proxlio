@@ -85,6 +85,8 @@ What the script does:
 
 **One manual step:** add the public hostname in your [Cloudflare Tunnel dashboard](https://one.dash.cloudflare.com/) — `hass.yourdomain.com` → `http://npm` (the NPM service name on the shared Docker network — not `localhost`). Automatic tunnel hostname creation via API is on the roadmap.
 
+![NPM proxy host with SSL certificate](docs/assets/npm-screenshot.png)
+
 ## Why not just configure them separately?
 
 You can. Here's what that looks like:
