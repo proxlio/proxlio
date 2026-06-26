@@ -32,11 +32,11 @@ slow "you@example.com" 0.06
 printf '%sCloudflare API Token: %s' "$YELLOW" "$RESET"
 slow "••••••••••••••••••••••••••••••••••••••" 0.02
 
-printf '%sTunnel name [proxlio]: %s' "$YELLOW" "$RESET"
+printf '%sTunnel name [proxlio] (Enter to keep): %s' "$YELLOW" "$RESET"
 printf 'proxlio\n'
 sleep 0.2
 
-printf '%sInstallation directory [~/proxlio]: %s' "$YELLOW" "$RESET"
+printf '%sInstallation directory [~/proxlio] (Enter to keep): %s' "$YELLOW" "$RESET"
 printf '~/proxlio\n'
 sleep 0.2
 
