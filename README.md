@@ -49,8 +49,11 @@ Tunnel name (e.g. home-tunnel):   home-tunnel
 [*] Starting stack...
 [+] Done.
 
-   Nginx Proxy Manager  →  http://192.168.1.x:81     admin@example.com / changeme
-   AdGuard Home         →  http://192.168.1.x:3000   set on first access
+   NPM Admin UI  →  http://localhost:81        admin@example.com / changeme
+   AdGuard Home  →  http://192.168.1.x:3000   set on first access
+
+   NPM admin is bound to localhost (security). From another device:
+     ssh -L 8181:localhost:81 user@192.168.1.x  →  http://localhost:8181
 
 Change the NPM default password immediately after first login.
 ```
@@ -80,7 +83,7 @@ What the script does:
 - Requests a Let's Encrypt certificate for the subdomain
 - Adds a DNS rewrite in AdGuard so LAN devices resolve `hass.yourdomain.com` to your server's local IP
 
-**One manual step:** add the public hostname in your [Cloudflare Tunnel dashboard](https://one.dash.cloudflare.com/) — `hass.yourdomain.com` → `http://localhost`. Automatic tunnel hostname creation via API is on the roadmap.
+**One manual step:** add the public hostname in your [Cloudflare Tunnel dashboard](https://one.dash.cloudflare.com/) — `hass.yourdomain.com` → `http://npm` (the NPM service name on the shared Docker network — not `localhost`). Automatic tunnel hostname creation via API is on the roadmap.
 
 ## Why not just configure them separately?
 

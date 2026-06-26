@@ -531,7 +531,11 @@ print_summary() {
     printf '%sNext steps:%s\n' "$BOLD" "$RESET"
     printf '  1. Log in to NPM and change the default password\n'
     printf '  2. Complete the AdGuard setup wizard at http://%s:3000\n' "$host_ip"
-    printf '  3. Add your first service:\n'
+    printf '  3. Add AdGuard credentials to .env (required for automatic DNS rewrites):\n'
+    printf '     echo '"'"'ADGUARD_USER=<your-username>'"'"' >> %s/.env\n' "$INSTALL_DIR"
+    printf '     echo '"'"'ADGUARD_PASSWORD=<your-password>'"'"' >> %s/.env\n' "$INSTALL_DIR"
+    printf '     (Set during the AdGuard setup wizard in step 2)\n'
+    printf '  4. Add your first service:\n'
     printf '     cd %s && ./scripts/add-service.sh\n' "$INSTALL_DIR"
 
     if [ -z "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]; then
