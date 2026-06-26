@@ -34,6 +34,8 @@ Internet ──► [ Cloudflare Tunnel ] ──► [ Nginx Proxy Manager ] ─�
 curl -fsSL https://raw.githubusercontent.com/proxlio/proxlio/main/install.sh | bash
 ```
 
+![Proxlio install demo](docs/assets/demo.gif)
+
 The installer prompts for four values, then brings the stack up:
 
 ```
