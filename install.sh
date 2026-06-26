@@ -524,7 +524,7 @@ configure_npm_defaults() {
         -H "Content-Type: application/json" \
         -d '{"identity":"admin@example.com","secret":"changeme"}' 2>/dev/null) || true
 
-    token=$(printf '%s' "$auth_response" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+    token=$(printf '%s' "$auth_response" | grep -o '"token":"[^"]*"' | cut -d'"' -f4) || true
 
     if [ -z "$token" ]; then
         warn "Could not authenticate with NPM to configure defaults (credentials may already be changed)."
