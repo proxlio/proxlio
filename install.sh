@@ -512,13 +512,18 @@ configure_npm_defaults() {
     local npm_url="http://localhost:81"
     info "Configuring NPM defaults..."
 
-    local auth_response token
-    auth_response=$(curl -sf --max-time 10 \
-        -X POST "${npm_url}/api/tokens" \
-        -H "Content-Type: application/json" \
-        -d '{"identity":"admin@example.com","secret":"changeme"}' 2>/dev/null) || true
-
-    token=$(printf '%s' "$auth_response" | grep -o '"token":"[^"]*"' | cut -d'"' -f4) || true
+    # NPM's API may not be ready immediately after port 81 starts responding —
+    # the database initialisation takes a few extra seconds on first run.
+    local token="" auth_response i
+    for i in $(seq 1 10); do
+        auth_response=$(curl -sf --max-time 5 \
+            -X POST "${npm_url}/api/tokens" \
+            -H "Content-Type: application/json" \
+            -d '{"identity":"admin@example.com","secret":"changeme"}' 2>/dev/null) || true
+        token=$(printf '%s' "$auth_response" | grep -o '"token":"[^"]*"' | cut -d'"' -f4) || true
+        [ -n "$token" ] && break
+        sleep 2
+    done
 
     if [ -z "$token" ]; then
         warn "Could not authenticate with NPM to configure defaults (credentials may already be changed)."
