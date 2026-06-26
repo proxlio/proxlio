@@ -3,6 +3,12 @@
 # https://proxlio.com
 set -euo pipefail
 
+# When piped through bash (curl | bash), stdin is the pipe — redirect to /dev/tty
+# so interactive prompts can read keyboard input.
+if [ ! -t 0 ] && [ -e /dev/tty ]; then
+    exec < /dev/tty
+fi
+
 # ---------------------------------------------------------------------------
 # Colors (disabled if not a tty or terminal doesn't support them)
 # ---------------------------------------------------------------------------
