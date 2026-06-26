@@ -130,7 +130,7 @@ prompt_value() {
     local default="$3"
 
     if [ -n "$default" ]; then
-        printf '%s%s [%s]: %s' "$YELLOW" "$question" "$default" "$RESET"
+        printf '%s%s [%s] (Enter to keep): %s' "$YELLOW" "$question" "$default" "$RESET"
     else
         printf '%s%s: %s' "$YELLOW" "$question" "$RESET"
     fi
