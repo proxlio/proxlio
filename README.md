@@ -67,23 +67,23 @@ From the Proxlio install directory:
 ```
 
 ```
-Service name (e.g. homeassistant): homeassistant
-IP:Port of the service            : 192.168.1.159:8123
-Subdomain (e.g. hass)             : hass
+Service name (e.g. homeassistant): open-webui
+IP:Port of the service            : 192.168.1.x:3000
+Subdomain (e.g. hass)             : ai
 
 [+] Proxy host created in NPM
 [+] SSL certificate requested (Let's Encrypt)
-[+] DNS rewrite added in AdGuard: hass.yourdomain.com → 192.168.1.x
+[+] DNS rewrite added in AdGuard: ai.yourdomain.com → 192.168.1.x
 
-✓  https://hass.yourdomain.com → 192.168.1.159:8123
+✓  https://ai.yourdomain.com → 192.168.1.x:3000
 ```
 
 What the script does:
 - Creates a proxy host in Nginx Proxy Manager
 - Requests a Let's Encrypt certificate for the subdomain
-- Adds a DNS rewrite in AdGuard so LAN devices resolve `hass.yourdomain.com` to your server's local IP
+- Adds a DNS rewrite in AdGuard so LAN devices resolve `ai.yourdomain.com` to your server's local IP
 
-**One manual step:** add the public hostname in your [Cloudflare Tunnel dashboard](https://one.dash.cloudflare.com/) — `hass.yourdomain.com` → `http://npm` (the NPM service name on the shared Docker network — not `localhost`). Automatic tunnel hostname creation via API is on the roadmap.
+**One manual step:** add the public hostname in your [Cloudflare Tunnel dashboard](https://one.dash.cloudflare.com/) — `ai.yourdomain.com` → `http://npm` (the NPM service name on the shared Docker network — not `localhost`). Automatic tunnel hostname creation via API is on the roadmap.
 
 ![NPM proxy host with SSL certificate](docs/assets/npm-screenshot.png)
 
