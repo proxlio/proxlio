@@ -5,9 +5,10 @@ services:
   # Admin UI : http://<host>:3000
   # DNS      : port 53 UDP/TCP
   #
-  # Prérequis : désactiver systemd-resolved sur l'hôte avant de démarrer
-  #   sudo systemctl stop systemd-resolved
-  #   sudo systemctl disable systemd-resolved
+  # Note: free port 53 before starting (systemd-resolved conflict on Ubuntu):
+  #   sudo mkdir -p /etc/systemd/resolved.conf.d
+  #   echo -e '[Resolve]\nDNSStubListener=no' | sudo tee /etc/systemd/resolved.conf.d/no-stub.conf
+  #   sudo systemctl restart systemd-resolved
   # ─────────────────────────────────────────────
   adguard:
     image: adguard/adguardhome:latest
@@ -22,14 +23,20 @@ services:
     volumes:
       - adguard_conf:/opt/adguardhome/conf
       - adguard_work:/opt/adguardhome/work
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
 
   # ─────────────────────────────────────────────
   # Nginx Proxy Manager — reverse proxy + SSL auto (Let's Encrypt)
-  # Admin UI : http://<host>:81
-  #   - Email par défaut   : admin@example.com
-  #   - Password par défaut: changeme  (à changer à la première connexion)
-  # HTTP     : port 80
-  # HTTPS    : port 443
+  # Admin UI : http://<host>:81  (bound to localhost — access via LAN IP or SSH tunnel)
+  #   Default email    : admin@example.com
+  #   Default password : changeme  (change on first login)
+  # HTTP  : port 80
+  # HTTPS : port 443
   # ─────────────────────────────────────────────
   npm:
     image: jc21/nginx-proxy-manager:latest
@@ -40,21 +47,20 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "81:81"
+      - "127.0.0.1:81:81"
     volumes:
       - npm_data:/data
       - npm_letsencrypt:/etc/letsencrypt
     depends_on:
-      - adguard
+      adguard:
+        condition: service_healthy
 
   # ─────────────────────────────────────────────
-  # Cloudflare Tunnel — accès externe sans ouvrir de port
-  # Aucun port exposé : le tunnel est initié en sortant vers Cloudflare.
-  # Token requis : créer un tunnel dans le dashboard Cloudflare Zero Trust
-  #   https://one.dash.cloudflare.com → Networks → Tunnels
-  #
-  # Ce service n'est démarré qu'avec le profil "tunnel" :
-  #   docker compose --profile tunnel up -d
+  # Cloudflare Tunnel — external access without port forwarding
+  # No ports exposed: the tunnel is initiated outbound to Cloudflare.
+  # Token passed via TUNNEL_TOKEN env var — not visible in docker inspect command.
+  # Token: create a tunnel at https://one.dash.cloudflare.com → Networks → Tunnels
+  # Start with: docker compose --profile tunnel up -d
   # ─────────────────────────────────────────────
   cloudflared:
     image: cloudflare/cloudflared:latest
@@ -63,11 +69,12 @@ services:
     profiles: ["tunnel"]
     networks:
       - proxlio
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    command: tunnel --no-autoupdate run
     environment:
       - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
     depends_on:
-      - npm
+      npm:
+        condition: service_started
 
 networks:
   proxlio:

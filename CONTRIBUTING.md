@@ -7,7 +7,8 @@ contributions that stay within that scope are very welcome.
 
 **Report a bug** — Open an issue using the bug report template. Include your
 OS, Docker version, and the relevant logs (`docker compose logs`). The more
-context, the faster we can help.
+context, the faster we can help. Look for issues tagged `good first issue` for
+a low-risk entry point if you're new to the project.
 
 **Propose a feature** — Open an issue using the feature request template before
 writing any code. Features that add new Docker components (new services,
@@ -25,7 +26,9 @@ cp .env.example .env        # fill in your domain and email
 docker compose up -d
 ```
 
-The wizard runs at `http://localhost:8080` on first boot.
+After startup, the services are available at:
+- NPM admin UI: `http://localhost:81` (default credentials: `admin@example.com` / `changeme`)
+- AdGuard Home: `http://localhost:3000`
 
 ## Commit convention
 

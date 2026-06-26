@@ -19,6 +19,7 @@ fi
 info()    { printf '%s[*]%s %s\n'  "$YELLOW" "$RESET" "$*"; }
 ok()      { printf '%s[+]%s %s\n'  "$GREEN"  "$RESET" "$*"; }
 err()     { printf '%s[!]%s %s\n'  "$RED"    "$RESET" "$*" >&2; }
+warn()    { printf '%s[~]%s %s\n'  "$YELLOW" "$RESET" "$*"; }
 die()     { err "$*"; exit 1; }
 banner()  { printf '\n%s%s%s\n\n' "$BOLD" "$*" "$RESET"; }
 
@@ -38,7 +39,6 @@ detect_os() {
     case "$OS_ID" in
         debian|ubuntu|raspbian) return 0 ;;
         *)
-            # Accept distros that are debian/ubuntu derivatives
             case "$OS_LIKE" in
                 *debian*|*ubuntu*) return 0 ;;
                 *) die "Unsupported OS: $OS_ID. Proxlio requires Debian, Ubuntu, or Raspberry Pi OS." ;;
@@ -58,7 +58,6 @@ check_docker() {
         need_docker=1
     fi
 
-    # Check for docker compose v2 (plugin) or v1 (standalone)
     if ! docker compose version >/dev/null 2>&1 && ! command -v docker-compose >/dev/null 2>&1; then
         need_compose=1
     fi
@@ -82,53 +81,42 @@ check_docker() {
 
 install_docker() {
     info "Installing Docker via official convenience script..."
+    # Use sudo directly — get_sudo() requires docker to already be running
     if ! command -v curl >/dev/null 2>&1; then
-        SUDO_CMD=$(get_sudo) || die "Cannot get sudo"
-        $SUDO_CMD apt-get update -qq && $SUDO_CMD apt-get install -y -qq curl
+        sudo apt-get update -qq && sudo apt-get install -y -qq curl
     fi
     curl -fsSL https://get.docker.com | sh
-    # Add current user to docker group to avoid sudo for docker commands
     local current_user
     current_user=$(id -un)
     if ! groups "$current_user" | grep -q docker; then
-        SUDO_CMD=$(get_sudo) || die "Cannot get sudo"
-        $SUDO_CMD usermod -aG docker "$current_user"
-        info "Added $current_user to docker group. You may need to log out and back in for group changes to take effect."
-        info "For this session, commands will run with sudo if needed."
+        sudo usermod -aG docker "$current_user"
+        info "Added $current_user to docker group."
+        info "For this session, docker commands will run with sudo. Log out and back in to run without sudo."
     fi
     ok "Docker installed."
 }
 
-# Returns "sudo" if needed, "" if docker runs as current user, exits on failure
-get_sudo() {
-    if docker info >/dev/null 2>&1; then
-        echo ""
-    elif sudo -n docker info >/dev/null 2>&1; then
-        echo "sudo"
-    else
-        # Prompt for sudo
-        if sudo docker info >/dev/null 2>&1; then
-            echo "sudo"
-        else
-            return 1
+# Resolve docker compose command.
+# After a fresh docker install, the current session may not have the docker group yet.
+# Fall back to sudo if docker is not accessible without it.
+docker_compose() {
+    local pre=""
+    if ! docker info >/dev/null 2>&1; then
+        if sudo -n docker info >/dev/null 2>&1; then
+            pre="sudo"
         fi
     fi
-}
-
-# Resolve docker compose command (v2 plugin or v1 standalone)
-docker_compose() {
-    if docker compose version >/dev/null 2>&1; then
-        docker compose "$@"
+    if $pre docker compose version >/dev/null 2>&1; then
+        $pre docker compose "$@"
     elif command -v docker-compose >/dev/null 2>&1; then
-        docker-compose "$@"
+        $pre docker-compose "$@"
     else
         die "docker compose not available."
     fi
 }
 
 # ---------------------------------------------------------------------------
-# Interactive prompt helper
-# Usage: prompt_value VAR_NAME "Question text" "default value"
+# Interactive prompt helpers
 # ---------------------------------------------------------------------------
 prompt_value() {
     local var_name="$1"
@@ -165,6 +153,23 @@ prompt_required() {
     done
 }
 
+# Prompt for a secret (input not echoed, retries until provided)
+prompt_secret() {
+    local var_name="$1"
+    local question="$2"
+    local value=""
+
+    while [ -z "$value" ]; do
+        printf '%s%s: %s' "$YELLOW" "$question" "$RESET"
+        read -rs value
+        printf '\n'
+        if [ -z "$value" ]; then
+            err "This field is required."
+        fi
+    done
+    printf -v "$var_name" '%s' "$value"
+}
+
 # ---------------------------------------------------------------------------
 # Gather configuration
 # ---------------------------------------------------------------------------
@@ -181,12 +186,11 @@ gather_config() {
 
     info "Cloudflare API Token: create one at https://dash.cloudflare.com/profile/api-tokens"
     info "Required permissions: Zone:Read (all zones) + Cloudflare Tunnel:Edit"
-    prompt_required CF_API_TOKEN \
-        "Cloudflare API Token" \
-        ""
+    prompt_secret CF_API_TOKEN \
+        "Cloudflare API Token"
 
     prompt_required CF_TUNNEL_NAME \
-        "Cloudflare Tunnel name (e.g. my-homelab)" \
+        "Cloudflare Tunnel name — internal label, only visible in your Cloudflare dashboard" \
         "proxlio"
 
     local default_dir
@@ -195,7 +199,6 @@ gather_config() {
         "Installation directory" \
         "$default_dir"
 
-    # Expand ~ if present
     INSTALL_DIR="${INSTALL_DIR/#\~/$HOME}"
 }
 
@@ -204,11 +207,11 @@ gather_config() {
 # ---------------------------------------------------------------------------
 confirm_config() {
     banner "Configuration Summary"
-    printf '  Domain         : %s%s%s\n' "$BOLD" "$DOMAIN" "$RESET"
-    printf '  LE Email       : %s\n' "$LETSENCRYPT_EMAIL"
-    printf '  CF Token       : %s****%s\n' "${CF_API_TOKEN:0:6}" "${CF_API_TOKEN: -4}"
-    printf '  Tunnel name    : %s\n' "$CF_TUNNEL_NAME"
-    printf '  Install dir    : %s\n' "$INSTALL_DIR"
+    printf '  Domain               : %s%s%s\n' "$BOLD" "$DOMAIN" "$RESET"
+    printf '  Let'"'"'s Encrypt email : %s\n'       "$LETSENCRYPT_EMAIL"
+    printf '  Cloudflare API token : %s****\n'      "${CF_API_TOKEN:0:4}"
+    printf '  Tunnel name          : %s\n'          "$CF_TUNNEL_NAME"
+    printf '  Install dir          : %s\n'          "$INSTALL_DIR"
     printf '\n'
     printf '%sProceed with installation? [Y/n]: %s' "$YELLOW" "$RESET"
     read -r answer
@@ -219,10 +222,46 @@ confirm_config() {
 }
 
 # ---------------------------------------------------------------------------
+# Check port 53 availability (systemd-resolved conflict)
+# Must run before writing any files so the user can abort cleanly.
+# ---------------------------------------------------------------------------
+check_port_53() {
+    if ss -lnup 2>/dev/null | grep -q ':53\b' || ss -lntp 2>/dev/null | grep -q ':53\b'; then
+        err "Port 53 is already in use. AdGuard Home cannot bind to it."
+        info "On Ubuntu/Debian, systemd-resolved usually occupies port 53."
+        info ""
+        info "Recommended fix (non-destructive, Ubuntu 22.04/24.04):"
+        info "  sudo mkdir -p /etc/systemd/resolved.conf.d"
+        info "  echo -e '[Resolve]\nDNSStubListener=no' | sudo tee /etc/systemd/resolved.conf.d/no-stub.conf"
+        info "  sudo systemctl restart systemd-resolved"
+        info ""
+        info "Alternative (simpler, fully disables systemd-resolved):"
+        info "  sudo systemctl disable --now systemd-resolved"
+        info "  echo 'nameserver 1.1.1.1' | sudo tee /etc/resolv.conf"
+        printf '%sContinue anyway? [y/N]: %s' "$YELLOW" "$RESET"
+        read -r answer
+        case "${answer:-N}" in
+            [Yy]*) warn "Continuing — AdGuard may fail to start. Fix the port conflict if it does." ;;
+            *) die "Aborted. Free port 53 first, then re-run install.sh." ;;
+        esac
+    else
+        ok "Port 53 is available."
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # Write .env
+# Backs up any existing .env before overwriting.
 # ---------------------------------------------------------------------------
 write_env() {
     local env_file="${INSTALL_DIR}/.env"
+
+    if [ -f "$env_file" ]; then
+        local backup="${env_file}.bak.$(date +%s)"
+        cp "$env_file" "$backup"
+        warn "Existing .env backed up to ${backup}"
+    fi
+
     local host_ip
     host_ip=$(hostname -I 2>/dev/null | awk '{print $1}') || host_ip=""
 
@@ -248,7 +287,6 @@ EOF
 # ---------------------------------------------------------------------------
 write_compose() {
     local compose_file="${INSTALL_DIR}/docker-compose.yml"
-    # If install.sh is running from the repo directory, reuse the existing file.
     local script_dir
     script_dir="$(cd "$(dirname "$0")" 2>/dev/null && pwd)" || script_dir=""
     local repo_compose="${script_dir}/docker-compose.yml"
@@ -269,9 +307,10 @@ services:
   # Admin UI : http://<host>:3000
   # DNS      : port 53 UDP/TCP
   #
-  # Note: disable systemd-resolved before starting:
-  #   sudo systemctl stop systemd-resolved
-  #   sudo systemctl disable systemd-resolved
+  # Note: free port 53 before starting (systemd-resolved conflict on Ubuntu):
+  #   sudo mkdir -p /etc/systemd/resolved.conf.d
+  #   echo -e '[Resolve]\nDNSStubListener=no' | sudo tee /etc/systemd/resolved.conf.d/no-stub.conf
+  #   sudo systemctl restart systemd-resolved
   # ─────────────────────────────────────────────
   adguard:
     image: adguard/adguardhome:latest
@@ -286,10 +325,16 @@ services:
     volumes:
       - adguard_conf:/opt/adguardhome/conf
       - adguard_work:/opt/adguardhome/work
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
 
   # ─────────────────────────────────────────────
   # Nginx Proxy Manager — reverse proxy + SSL auto (Let's Encrypt)
-  # Admin UI : http://<host>:81
+  # Admin UI : http://<host>:81  (bound to localhost — access via LAN IP or SSH tunnel)
   #   Default email    : admin@example.com
   #   Default password : changeme  (change on first login)
   # HTTP  : port 80
@@ -304,12 +349,13 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "81:81"
+      - "127.0.0.1:81:81"
     volumes:
       - npm_data:/data
       - npm_letsencrypt:/etc/letsencrypt
     depends_on:
-      - adguard
+      adguard:
+        condition: service_healthy
 
   # ─────────────────────────────────────────────
   # Cloudflare Tunnel — external access without port forwarding
@@ -324,11 +370,12 @@ services:
     profiles: ["tunnel"]
     networks:
       - proxlio
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    command: tunnel --no-autoupdate run
     environment:
       - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
     depends_on:
-      - npm
+      npm:
+        condition: service_started
 
 networks:
   proxlio:
@@ -349,50 +396,6 @@ COMPOSE
 }
 
 # ---------------------------------------------------------------------------
-# Cloudflare Tunnel — create and get token
-# Requires cloudflared CLI; falls back to manual instructions if not available.
-# ---------------------------------------------------------------------------
-setup_tunnel() {
-    info "Setting up Cloudflare Tunnel '${CF_TUNNEL_NAME}'..."
-
-    if ! command -v cloudflared >/dev/null 2>&1; then
-        info "cloudflared CLI not found — skipping automatic tunnel creation."
-        info "To finish tunnel setup:"
-        info "  1. Go to https://one.dash.cloudflare.com/ -> Networks -> Tunnels"
-        info "  2. Create a tunnel named '${CF_TUNNEL_NAME}'"
-        info "  3. Copy the tunnel token and set it in ${INSTALL_DIR}/.env:"
-        info "     CLOUDFLARE_TUNNEL_TOKEN=<your-token>"
-        info "  4. Then run: cd ${INSTALL_DIR} && docker compose up -d cloudflared"
-        CLOUDFLARE_TUNNEL_TOKEN=""
-        return 0
-    fi
-
-    # Authenticate
-    info "Running: cloudflared tunnel login (browser will open)"
-    cloudflared tunnel login
-
-    # Create tunnel (ignore error if already exists)
-    # tunnel list output: ID | NAME | CREATED | CONNECTIONS — name is column 2
-    if ! cloudflared tunnel list 2>/dev/null | awk 'NR>1 {print $2}' | grep -qx "$CF_TUNNEL_NAME"; then
-        cloudflared tunnel create "$CF_TUNNEL_NAME"
-        ok "Tunnel '${CF_TUNNEL_NAME}' created."
-    else
-        ok "Tunnel '${CF_TUNNEL_NAME}' already exists."
-    fi
-
-    # Get tunnel token
-    CLOUDFLARE_TUNNEL_TOKEN=$(cloudflared tunnel token "$CF_TUNNEL_NAME")
-    if [ -z "$CLOUDFLARE_TUNNEL_TOKEN" ]; then
-        err "Could not retrieve tunnel token. Set CLOUDFLARE_TUNNEL_TOKEN manually in ${INSTALL_DIR}/.env"
-        CLOUDFLARE_TUNNEL_TOKEN=""
-    else
-        # Update the placeholder line in .env with the real token
-        sed -i "s|^# CLOUDFLARE_TUNNEL_TOKEN=.*|CLOUDFLARE_TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}|" "${INSTALL_DIR}/.env"
-        ok "Tunnel token saved to .env"
-    fi
-}
-
-# ---------------------------------------------------------------------------
 # Copy scripts/ to install directory
 # ---------------------------------------------------------------------------
 copy_scripts() {
@@ -407,7 +410,6 @@ copy_scripts() {
         chmod +x "${dst_scripts}"/*.sh 2>/dev/null || true
         ok "Scripts copied to ${dst_scripts}"
     else
-        # curl-pipe install: no local scripts dir available — warn the user
         info "Note: helper scripts not found (curl-pipe install mode)."
         info "To get add-service.sh, clone the repo after installation:"
         info "  git clone https://github.com/proxlio/proxlio /tmp/proxlio"
@@ -417,25 +419,35 @@ copy_scripts() {
 }
 
 # ---------------------------------------------------------------------------
-# Check port 53 availability (systemd-resolved conflict)
+# Cloudflare Tunnel — create and get token
 # ---------------------------------------------------------------------------
-check_port_53() {
-    if ss -lnup 2>/dev/null | grep -q ':53\b' || ss -lntp 2>/dev/null | grep -q ':53\b'; then
-        err "Port 53 is already in use. AdGuard Home cannot bind to it."
-        info "On Ubuntu/Debian, systemd-resolved usually occupies port 53."
-        info "To free it, run:"
-        info "  sudo systemctl stop systemd-resolved"
-        info "  sudo systemctl disable systemd-resolved"
-        info "  sudo rm -f /etc/resolv.conf"
-        info "  echo 'nameserver 1.1.1.1' | sudo tee /etc/resolv.conf"
-        printf '%sContinue anyway? [y/N]: %s' "$YELLOW" "$RESET"
-        read -r answer
-        case "${answer:-N}" in
-            [Yy]*) info "Continuing — AdGuard may fail to start. Fix the port conflict if it does." ;;
-            *) die "Aborted. Free port 53 first, then re-run install.sh." ;;
-        esac
+setup_tunnel() {
+    info "Setting up Cloudflare Tunnel '${CF_TUNNEL_NAME}'..."
+
+    if ! command -v cloudflared >/dev/null 2>&1; then
+        info "cloudflared CLI not found — skipping automatic tunnel creation."
+        CLOUDFLARE_TUNNEL_TOKEN=""
+        return 0
+    fi
+
+    info "Running: cloudflared tunnel login (browser will open)"
+    cloudflared tunnel login
+
+    # tunnel list output: ID | NAME | CREATED | CONNECTIONS
+    if ! cloudflared tunnel list 2>/dev/null | awk 'NR>1 {print $2}' | grep -qxF "$CF_TUNNEL_NAME"; then
+        cloudflared tunnel create "$CF_TUNNEL_NAME"
+        ok "Tunnel '${CF_TUNNEL_NAME}' created."
     else
-        ok "Port 53 is available."
+        ok "Tunnel '${CF_TUNNEL_NAME}' already exists."
+    fi
+
+    CLOUDFLARE_TUNNEL_TOKEN=$(cloudflared tunnel token "$CF_TUNNEL_NAME")
+    if [ -z "$CLOUDFLARE_TUNNEL_TOKEN" ]; then
+        err "Could not retrieve tunnel token. Set CLOUDFLARE_TUNNEL_TOKEN manually in ${INSTALL_DIR}/.env"
+        CLOUDFLARE_TUNNEL_TOKEN=""
+    else
+        sed -i "s|^# CLOUDFLARE_TUNNEL_TOKEN=.*|CLOUDFLARE_TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}|" "${INSTALL_DIR}/.env"
+        ok "Tunnel token saved to .env"
     fi
 }
 
@@ -445,13 +457,28 @@ check_port_53() {
 launch_stack() {
     local compose_args=(-f "${INSTALL_DIR}/docker-compose.yml" --env-file "${INSTALL_DIR}/.env" --project-directory "${INSTALL_DIR}")
     if [ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]; then
-        info "Starting Proxlio stack with Cloudflare Tunnel (docker compose --profile tunnel up -d)..."
+        info "Starting Proxlio stack with Cloudflare Tunnel..."
         docker_compose "${compose_args[@]}" --profile tunnel up -d
     else
-        info "Starting Proxlio stack without tunnel (docker compose up -d)..."
+        info "Starting Proxlio stack (without tunnel)..."
         docker_compose "${compose_args[@]}" up -d
     fi
     ok "Stack started."
+
+    # Wait for NPM to respond before printing access URLs
+    info "Waiting for NPM to be ready (first start may take 15-30s)..."
+    local i ready=0
+    for i in $(seq 1 20); do
+        if curl -sf --max-time 3 http://localhost:81 >/dev/null 2>&1; then
+            ok "NPM is ready."
+            ready=1
+            break
+        fi
+        sleep 2
+    done
+    if [ "$ready" -eq 0 ]; then
+        warn "NPM did not respond in 40s — check logs: docker compose -f ${INSTALL_DIR}/docker-compose.yml logs npm"
+    fi
 }
 
 # ---------------------------------------------------------------------------
@@ -473,19 +500,28 @@ print_summary() {
     printf '%s  -> Change these immediately after first login!%s\n' "$RED" "$RESET"
     printf '\n'
     printf '%sNext steps:%s\n' "$BOLD" "$RESET"
-    printf '  1. Log in to NPM and change the default password\n'
-    printf '  2. Complete the AdGuard setup wizard (port 3000)\n'
-    printf '  3. In NPM: add a Proxy Host for each service on your network\n'
-    printf '  4. In AdGuard: set DNS rewrites to point subdomains to this host\n'
+    printf '  1. Log in to NPM at http://%s:81 and change the default password\n' "$host_ip"
+    printf '  2. Complete the AdGuard setup wizard at http://%s:3000\n' "$host_ip"
+    printf '  3. Add your first service:\n'
+    printf '     cd %s && ./scripts/add-service.sh\n' "$INSTALL_DIR"
+
     if [ -z "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]; then
-        printf '  5. Complete Cloudflare Tunnel setup manually (see instructions above)\n'
+        printf '\n'
+        printf '%sCloudflare Tunnel setup (required for external access):%s\n' "$BOLD" "$RESET"
+        printf '  1. Go to https://one.dash.cloudflare.com/ -> Networks -> Tunnels\n'
+        printf '  2. Create a tunnel named '"'"'%s'"'"'\n' "$CF_TUNNEL_NAME"
+        printf '  3. Copy the tunnel token and add it to %s/.env:\n' "$INSTALL_DIR"
+        printf '     CLOUDFLARE_TUNNEL_TOKEN=<your-token>\n'
+        printf '  4. Start the tunnel:\n'
+        printf '     cd %s && docker compose --profile tunnel up -d cloudflared\n' "$INSTALL_DIR"
     else
-        printf '  5. Configure Cloudflare Tunnel routes in the Zero Trust dashboard\n'
-        printf '     https://one.dash.cloudflare.com/ -> Networks -> Tunnels -> %s\n' "$CF_TUNNEL_NAME"
+        printf '  4. Add public hostnames in Cloudflare Zero Trust:\n'
+        printf '     https://one.dash.cloudflare.com/ -> Networks -> Tunnels -> %s -> Edit\n' "$CF_TUNNEL_NAME"
     fi
+
     printf '\n'
-    printf '%sTo stop the stack:%s  cd %s && docker compose down\n' "$YELLOW" "$RESET" "$INSTALL_DIR"
-    printf '%sTo view logs:%s       cd %s && docker compose logs -f\n' "$YELLOW" "$RESET" "$INSTALL_DIR"
+    printf '%sTo stop the stack:%s  docker compose -f %s/docker-compose.yml down\n' "$YELLOW" "$RESET" "$INSTALL_DIR"
+    printf '%sTo view logs:%s       docker compose -f %s/docker-compose.yml logs -f\n' "$YELLOW" "$RESET" "$INSTALL_DIR"
     printf '\n'
     ok "Installation complete. Enjoy Proxlio!"
 }
@@ -504,14 +540,15 @@ main() {
     gather_config
     confirm_config
 
-    # Create install directory
+    # Check port 53 BEFORE writing any files — user may abort here
+    check_port_53
+
     mkdir -p "$INSTALL_DIR"
     ok "Install directory ready: ${INSTALL_DIR}"
 
     write_env
     write_compose
     copy_scripts
-    check_port_53
     setup_tunnel
     launch_stack
     print_summary

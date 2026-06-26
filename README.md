@@ -24,7 +24,7 @@ Internet ──► [ Cloudflare Tunnel ] ──► [ Nginx Proxy Manager ] ─�
 ✅ Automatic SSL — Let's Encrypt certificates issued by NPM, no certbot setup  
 ✅ Split DNS — local traffic resolves to your server's LAN IP, stays off the internet  
 ✅ External access without port forwarding — Cloudflare Tunnel is outbound-only  
-✅ Works behind CGNAT — no public IP required  
+✅ Works even without a public IP — including CGNAT and ISP-shared addresses  
 ✅ Add a service in under 2 minutes — 3 prompts, one script  
 ✅ No lock-in — plain Docker Compose, swap or extend components freely  
 
@@ -100,16 +100,20 @@ Proxlio is not magic — it is the same tools, pre-wired so they actually talk t
 
 - Linux — Raspberry Pi OS, Debian, or Ubuntu (64-bit)
 - A domain managed on Cloudflare DNS (free account works)
-- A Cloudflare API token — permissions: **Zone:Read** + **Cloudflare Tunnel:Edit**
+- A Cloudflare API token — permissions: **Zone:Read** + **Cloudflare Tunnel:Edit**  
+  → [Create API token](https://dash.cloudflare.com/profile/api-tokens)
+- `jq` — required by `add-service.sh` (the installer will prompt you if missing: `sudo apt-get install -y jq`)
 
 Docker is installed automatically if not already present.
+
+> **Don't have a domain yet?** [Cloudflare Registrar](https://www.cloudflare.com/products/registrar/) offers domains at cost (no markup), already managed on Cloudflare DNS.
 
 ## What's inside
 
 | Component | Role |
 |-----------|------|
 | [Nginx Proxy Manager](https://nginxproxymanager.com) | Routes HTTPS requests by hostname. Issues and renews Let's Encrypt certificates. Handles HTTP → HTTPS redirect. |
-| [AdGuard Home](https://adguard.com/en/adguard-home/overview.html) | Local DNS server. Rewrites `subdomain.yourdomain.com` to your server's LAN IP so traffic never hairpins through Cloudflare. Blocks ads as a side effect. |
+| [AdGuard Home](https://adguard.com/en/adguard-home/overview.html) | Local DNS server. Rewrites `subdomain.yourdomain.com` to your server's LAN IP so traffic never leaves your home network. Blocks ads as a side effect. |
 | [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) | Outbound-only tunnel to Cloudflare's edge. No port forwarding, no public IP required. |
 
 ## Architecture
@@ -160,7 +164,7 @@ Docker is installed automatically if not already present.
 - **Manual tunnel hostname step** — after running `add-service.sh`, you still need to add the public hostname in the Cloudflare dashboard. This is on the roadmap.
 - **Port 53 conflict** — if `systemd-resolved` is running (default on Ubuntu), the installer will warn you and provide the commands to free the port. AdGuard needs exclusive access to port 53.
 - **No HTTPS between NPM and backend** — NPM forwards to backend services over HTTP by default. You can change this per-host in NPM's UI if your service requires it.
-- **No clustering or HA** — this is a single-node setup. If your server goes down, services go down.
+- **No clustering or high availability** — this is a single-node setup. If your server goes down, services go down.
 
 ## Uninstall
 

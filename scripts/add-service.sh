@@ -4,7 +4,7 @@
 # Usage: ./scripts/add-service.sh
 #
 # Reads configuration from ../.env relative to this script.
-# Required in .env: DOMAIN
+# Required in .env: DOMAIN, HOST_IP
 # Optional in .env: NPM_URL, NPM_EMAIL, NPM_PASSWORD, ADGUARD_URL, ADGUARD_USER, ADGUARD_PASSWORD
 
 set -euo pipefail
@@ -20,12 +20,9 @@ err()  { echo -e "${RED}Error: $*${NC}" >&2; }
 warn() { echo -e "${YELLOW}Warning: $*${NC}"; }
 ok()   { echo -e "${GREEN}✓ $*${NC}"; }
 
-# ─── Paths and defaults ────────────────────────────────────────────────────────
+# ─── Paths ─────────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/../.env"
-
-NPM_URL="${NPM_URL:-http://localhost:81}"
-ADGUARD_URL="${ADGUARD_URL:-http://localhost:3000}"
 
 # ─── Dependency check ──────────────────────────────────────────────────────────
 if ! command -v jq &>/dev/null; then
@@ -40,7 +37,8 @@ if ! command -v curl &>/dev/null; then
   exit 1
 fi
 
-# ─── Load .env ─────────────────────────────────────────────────────────────────
+# ─── Load .env FIRST, then set defaults ────────────────────────────────────────
+# Loading .env before setting defaults allows values in .env to override them.
 if [[ ! -f "$ENV_FILE" ]]; then
   err ".env file not found at $ENV_FILE"
   echo "  Run the install script first, or create .env manually with at least:"
@@ -53,6 +51,14 @@ source "$ENV_FILE"
 
 : "${DOMAIN:?DOMAIN is not set in .env — add: DOMAIN=yourdomain.com}"
 
+if [[ -z "${LETSENCRYPT_EMAIL:-}" ]]; then
+  warn "LETSENCRYPT_EMAIL is not set in $ENV_FILE — Let's Encrypt will reject the certificate request."
+  warn "Add LETSENCRYPT_EMAIL=you@example.com to $ENV_FILE and re-run to get SSL."
+fi
+
+# Defaults applied AFTER source so .env values take precedence
+NPM_URL="${NPM_URL:-http://localhost:81}"
+ADGUARD_URL="${ADGUARD_URL:-http://localhost:3000}"
 NPM_EMAIL="${NPM_EMAIL:-admin@example.com}"
 NPM_PASSWORD="${NPM_PASSWORD:-changeme}"
 ADGUARD_USER="${ADGUARD_USER:-}"
@@ -94,6 +100,11 @@ fi
 FORWARD_HOST="${SERVICE_ADDR%%:*}"
 FORWARD_PORT="${SERVICE_ADDR##*:}"
 
+if [[ -z "$FORWARD_HOST" ]]; then
+  err "IP address cannot be empty — expected format: 192.168.1.x:8080"
+  exit 1
+fi
+
 if ! [[ "$FORWARD_PORT" =~ ^[0-9]+$ ]] || (( FORWARD_PORT < 1 || FORWARD_PORT > 65535 )); then
   err "Invalid port: $FORWARD_PORT"
   exit 1
@@ -101,19 +112,29 @@ fi
 
 FQDN="${SUBDOMAIN}.${DOMAIN}"
 
+# ─── Confirm before proceeding ─────────────────────────────────────────────────
 echo "  → $SERVICE_NAME: $FQDN → $FORWARD_HOST:$FORWARD_PORT"
+echo ""
+read -rp "Create this service? [Y/n]: " confirm
+case "${confirm:-Y}" in
+  [Nn]*) echo "Cancelled."; exit 0 ;;
+esac
 echo ""
 
 # ─── NPM: get auth token ───────────────────────────────────────────────────────
 echo -n "  Connecting to NPM ($NPM_URL)... "
 
+NPM_AUTH_BODY=$(jq -n --arg email "$NPM_EMAIL" --arg secret "$NPM_PASSWORD" \
+  '{identity: $email, secret: $secret}')
+
 if ! NPM_TOKEN_RESPONSE=$(curl -sf --max-time 10 \
   -X POST "$NPM_URL/api/tokens" \
   -H "Content-Type: application/json" \
-  -d "{\"identity\":\"$NPM_EMAIL\",\"secret\":\"$NPM_PASSWORD\"}" 2>&1); then
+  -d "$NPM_AUTH_BODY" 2>&1); then
   echo ""
   err "Cannot connect to NPM at $NPM_URL"
   echo "  Check that the stack is running:  docker compose ps"
+  echo "  If NPM admin is bound to 127.0.0.1, run this script on the Proxlio host."
   exit 1
 fi
 
@@ -135,18 +156,18 @@ PROXY_BODY=$(jq -n \
   --arg     host "$FORWARD_HOST" \
   --argjson port "$FORWARD_PORT" \
   '{
-    domain_names:           [$fqdn],
-    forward_scheme:         "http",
-    forward_host:           $host,
-    forward_port:           $port,
-    access_list_id:         "0",
-    certificate_id:         0,
-    ssl_forced:             0,
-    caching_enabled:        0,
-    block_exploits:         1,
+    domain_names:            [$fqdn],
+    forward_scheme:          "http",
+    forward_host:            $host,
+    forward_port:            $port,
+    access_list_id:          0,
+    certificate_id:          0,
+    ssl_forced:              0,
+    caching_enabled:         0,
+    block_exploits:          1,
     allow_websocket_upgrade: 1,
-    http2_support:          0,
-    locations:              []
+    http2_support:           0,
+    locations:               []
   }')
 
 if ! PROXY_RESPONSE=$(curl -sf --max-time 15 \
@@ -198,25 +219,24 @@ if CERT_RESPONSE=$(curl -sf --max-time 120 \
 fi
 
 if [[ -n "$CERT_ID" && "$CERT_ID" != "null" && "$CERT_ID" != "0" ]]; then
-  # Attach the certificate and enable HTTPS on the proxy host
   UPDATE_BODY=$(jq -n \
     --arg     fqdn    "$FQDN" \
     --arg     host    "$FORWARD_HOST" \
     --argjson port    "$FORWARD_PORT" \
     --argjson cert_id "$CERT_ID" \
     '{
-      domain_names:           [$fqdn],
-      forward_scheme:         "http",
-      forward_host:           $host,
-      forward_port:           $port,
-      access_list_id:         "0",
-      certificate_id:         $cert_id,
-      ssl_forced:             1,
-      caching_enabled:        0,
-      block_exploits:         1,
+      domain_names:            [$fqdn],
+      forward_scheme:          "http",
+      forward_host:            $host,
+      forward_port:            $port,
+      access_list_id:          0,
+      certificate_id:          $cert_id,
+      ssl_forced:              1,
+      caching_enabled:         0,
+      block_exploits:          1,
       allow_websocket_upgrade: 1,
-      http2_support:          1,
-      locations:              []
+      http2_support:           1,
+      locations:               []
     }')
 
   if curl -sf --max-time 15 \
@@ -235,7 +255,7 @@ else
   echo ""
   warn "Let's Encrypt request failed — the domain is likely not publicly reachable yet."
   warn "This is expected before the Cloudflare Tunnel is configured."
-  warn "Enable SSL later from: http://localhost:81 → Proxy Hosts → $FQDN → Edit → SSL"
+  warn "Enable SSL later from NPM admin → Proxy Hosts → $FQDN → Edit → SSL"
 fi
 
 # ─── AdGuard: create DNS rewrite ───────────────────────────────────────────────
@@ -244,7 +264,11 @@ fi
 # instead of going through Cloudflare. Traffic stays on LAN.
 echo -n "  Adding DNS rewrite in AdGuard ($ADGUARD_URL)... "
 
-ADGUARD_REWRITE_BODY="{\"domain\":\"$FQDN\",\"answer\":\"$HOST_IP\"}"
+ADGUARD_REWRITE_BODY=$(jq -n \
+  --arg domain "$FQDN" \
+  --arg answer "$HOST_IP" \
+  '{domain: $domain, answer: $answer}')
+
 ADGUARD_HTTP_CODE=""
 
 if [[ -n "$ADGUARD_USER" && -n "$ADGUARD_PASSWORD" ]]; then
@@ -267,13 +291,13 @@ if [[ "$ADGUARD_HTTP_CODE" =~ ^2 ]]; then
 elif [[ -z "$ADGUARD_HTTP_CODE" ]]; then
   echo ""
   warn "Cannot connect to AdGuard at $ADGUARD_URL"
-  warn "Add DNS rewrite manually: Settings → DNS rewrites → Add"
-  warn "  Domain: $FQDN   Answer: 127.0.0.1"
+  warn "Add DNS rewrite manually: AdGuard admin → Settings → DNS rewrites → Add"
+  warn "  Domain: $FQDN   Answer: $HOST_IP"
 else
   echo ""
   warn "AdGuard returned HTTP $ADGUARD_HTTP_CODE."
-  warn "Add DNS rewrite manually: Settings → DNS rewrites → Add"
-  warn "  Domain: $FQDN   Answer: 127.0.0.1"
+  warn "Add DNS rewrite manually: AdGuard admin → Settings → DNS rewrites → Add"
+  warn "  Domain: $FQDN   Answer: $HOST_IP"
 fi
 
 # ─── Summary ───────────────────────────────────────────────────────────────────
@@ -282,7 +306,7 @@ ok "$FQDN → $FORWARD_HOST:$FORWARD_PORT"
 echo ""
 echo "Next step — add a public hostname in your Cloudflare Tunnel:"
 echo ""
-echo "  Cloudflare Zero Trust → Networks → Tunnels → your tunnel → Edit → Public Hostnames → Add"
+echo "  Cloudflare Zero Trust → Networks → Tunnels → ${CF_TUNNEL_NAME:-your-tunnel} → Edit → Public Hostnames → Add"
 echo "    Subdomain : $SUBDOMAIN"
 echo "    Domain    : $DOMAIN"
 echo "    Service   : http://localhost"
@@ -290,6 +314,6 @@ echo ""
 
 if [[ "$SSL_ENABLED" == "false" ]]; then
   echo "Then enable SSL in NPM once the tunnel is live:"
-  echo "  http://localhost:81 → Proxy Hosts → $FQDN → Edit → SSL → Let's Encrypt"
+  echo "  NPM admin → Proxy Hosts → $FQDN → Edit → SSL → Let's Encrypt"
   echo ""
 fi
