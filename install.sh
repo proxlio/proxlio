@@ -504,6 +504,44 @@ launch_stack() {
 }
 
 # ---------------------------------------------------------------------------
+# Configure NPM defaults right after first start.
+# Uses default credentials (guaranteed at this point — user hasn't changed them yet).
+# Sets the default site to 404 so unrecognised hosts don't expose the NPM congratulations page.
+# ---------------------------------------------------------------------------
+configure_npm_defaults() {
+    local npm_url="http://localhost:81"
+    info "Configuring NPM defaults..."
+
+    local auth_response token
+    auth_response=$(curl -sf --max-time 10 \
+        -X POST "${npm_url}/api/tokens" \
+        -H "Content-Type: application/json" \
+        -d '{"identity":"admin@example.com","secret":"changeme"}' 2>/dev/null) || true
+
+    token=$(printf '%s' "$auth_response" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+
+    if [ -z "$token" ]; then
+        warn "Could not authenticate with NPM to configure defaults (credentials may already be changed)."
+        warn "Set the default site manually: NPM admin → Settings → Default Site → Page Not Found (404)"
+        return 0
+    fi
+
+    local http_code
+    http_code=$(curl -s --max-time 10 \
+        -X PUT "${npm_url}/api/settings/default-site" \
+        -H "Authorization: Bearer ${token}" \
+        -H "Content-Type: application/json" \
+        -d '{"value":"404"}' \
+        -w "%{http_code}" -o /dev/null 2>/dev/null) || true
+
+    if [ "${http_code:-0}" = "200" ]; then
+        ok "NPM default site set to 404 (hides the Congratulations page for unconfigured hosts)."
+    else
+        warn "Could not set NPM default site (HTTP ${http_code:-?}). Set it manually: Settings → Default Site → 404."
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # Post-install summary
 # ---------------------------------------------------------------------------
 print_summary() {
@@ -584,6 +622,7 @@ main() {
     copy_scripts
     setup_tunnel
     launch_stack
+    configure_npm_defaults
     print_summary
 }
 
