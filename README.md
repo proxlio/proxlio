@@ -8,7 +8,7 @@
 
 ---
 
-You have services running on a home server or Raspberry Pi. You want `hass.yourdomain.com` with valid SSL, reachable from anywhere — without opening ports on your router. Getting there normally means configuring Nginx Proxy Manager, AdGuard Home, and a Cloudflare Tunnel separately, each with its own quirks and documentation. Proxlio wires all three together. One command, five minutes.
+You have services running on a home server or Raspberry Pi. You want `ai.yourdomain.com` with valid SSL, reachable from anywhere — without opening ports on your router. Getting there normally means configuring Nginx Proxy Manager, AdGuard Home, and a Cloudflare Tunnel separately, each with its own quirks and documentation. Proxlio wires all three together. One command, five minutes.
 
 ```
 Internet ──► [ Cloudflare Tunnel ] ──► [ Nginx Proxy Manager ] ──► your services
