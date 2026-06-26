@@ -31,7 +31,7 @@ Internet ──► [ Cloudflare Tunnel ] ──► [ Nginx Proxy Manager ] ─�
 ## Quick start
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/proxlio/proxlio/main/install.sh | bash
+bash <(curl -fsSL https://raw.githubusercontent.com/proxlio/proxlio/main/install.sh)
 ```
 
 ![Proxlio install demo](docs/assets/demo.gif)

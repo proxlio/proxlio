@@ -65,7 +65,7 @@ check_docker() {
     if [ "$need_docker" -eq 1 ] || [ "$need_compose" -eq 1 ]; then
         info "Docker$([ "$need_compose" -eq 1 ] && echo ' Compose') not found."
         printf '%sInstall Docker automatically? [Y/n]: %s' "$YELLOW" "$RESET"
-        read -r answer </dev/tty
+        read -r answer
         case "${answer:-Y}" in
             [Yy]*|"")
                 install_docker
@@ -129,7 +129,7 @@ prompt_value() {
         printf '%s%s: %s' "$YELLOW" "$question" "$RESET"
     fi
 
-    read -r input </dev/tty
+    read -r input
     if [ -z "$input" ] && [ -n "$default" ]; then
         printf -v "$var_name" '%s' "$default"
     else
@@ -161,7 +161,7 @@ prompt_secret() {
 
     while [ -z "$value" ]; do
         printf '%s%s: %s' "$YELLOW" "$question" "$RESET"
-        read -rs value </dev/tty
+        read -rs value
         printf '\n'
         if [ -z "$value" ]; then
             err "This field is required."
@@ -214,7 +214,7 @@ confirm_config() {
     printf '  Install dir          : %s\n'          "$INSTALL_DIR"
     printf '\n'
     printf '%sProceed with installation? [Y/n]: %s' "$YELLOW" "$RESET"
-    read -r answer </dev/tty
+    read -r answer
     case "${answer:-Y}" in
         [Yy]*|"") ;;
         *) die "Installation cancelled." ;;
@@ -254,7 +254,7 @@ check_port_53() {
         info "  sudo systemctl disable --now systemd-resolved"
         info "  echo 'nameserver 1.1.1.1' | sudo tee /etc/resolv.conf"
         printf '%sContinue anyway? [y/N]: %s' "$YELLOW" "$RESET"
-        read -r answer </dev/tty
+        read -r answer
         case "${answer:-N}" in
             [Yy]*) warn "Continuing — AdGuard may fail to start. Fix the port conflict if it does." ;;
             *) die "Aborted. Free port 53 first, then re-run install.sh." ;;
